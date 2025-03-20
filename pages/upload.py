@@ -65,7 +65,7 @@ st.markdown("Upload PDF, DOCX, or TXT files for processing.")
 
 if "logged_in" not in st.session_state or not st.session_state.logged_in:  
     st.warning("Please log in to upload documents.")
-    st.page_link("jwtstreamlit.py", label=" ⬅️ Click here to Login")
+    st.page_link("frontend.py", label=" ⬅️ Click here to Login")
     st.markdown("""
     <style>
         [data-testid="stSidebar"] {
