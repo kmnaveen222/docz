@@ -4,7 +4,6 @@ import os
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from streamlit_javascript import st_javascript  # make sure to install this package
-
 # Load environment variables
 load_dotenv()
 
@@ -33,15 +32,6 @@ st.markdown("""
         }
     </style>
 """, unsafe_allow_html=True)
-
-# st.markdown(f"""
-
-#      <style>
-#          .stElementContainer:nth-child(even) button{{
-#              color: blue;
-#              }}
-#      </style>
-#  """, unsafe_allow_html=True)
 
 st.title("💬 AI Chatbot")
 st.markdown("🚀 Chat with your AI assistant!")
@@ -133,15 +123,9 @@ if not st.session_state.logged_in:
             st.sidebar.error(response.json().get("error", "Registration failed"))
 else:
     if "username" in st.session_state and st.session_state.username:
-        st.sidebar.header(f"Hi {st.session_state.username} 🙋🏼‍♂️")
-    
-    # Navigation
-    st.sidebar.title("Navigation")
-    # page = st.sidebar.radio("Go to", ["Chatbot", "Upload Documents"])
-
-    # # Redirect to Upload Page
-    # if page == "Upload Documents":
-    #     st.switch_page("pages/upload.py")
+        st.sidebar.title(f"Hi {st.session_state.username} 🙋🏼‍♂️")
+   
+  
     # Ensure session state variable exists and is a dictionary
     if "chats" not in st.session_state or not isinstance(st.session_state.chats, dict):
         st.session_state.chats = {}  # Initialize as a dictionary
@@ -155,13 +139,6 @@ else:
         st.session_state.active_chat = chat_id
 
     # **Existing Chats List**
-    # if st.session_state.chats:
-    #     for chat_id in st.session_state.chats.keys():
-            
-    #         if st.sidebar.button(chat_id):
-    #             st.session_state.active_chat = chat_id
-
-
         # In the section where you display existing chats in the sidebar
     if st.session_state.chats:
         for chat_id in st.session_state.chats.keys():

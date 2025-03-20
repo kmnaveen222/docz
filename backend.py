@@ -277,14 +277,14 @@ def retrieve_similar_context(user_id, newchat_id, query, top_k=1):
     # return get_top_matches(chat_data), get_top_matches(doc_data),context_template
     return top_match,context_template,modified_query
  
-def store_embeddings(user_id, chunks, filename):
+def store_embeddings(user_id,doc,filename):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    for chunk in chunks:
-        embedding = embeddings_model.embed_query(chunk.page_content)
-        embedding_blob = np.array(embedding, dtype=np.float32).tobytes()
-        cursor.execute("INSERT INTO document_embeddings (user_id, filename, embedding, text_snippet) VALUES (?, ?, ?, ?)",
-                       (user_id, filename, embedding_blob, chunk.page_content))
+    # for chunk in chunks:
+    embedding = embeddings_model.embed_query(doc.page_content)
+    embedding_blob = np.array(embedding, dtype=np.float32).tobytes()
+    cursor.execute("INSERT INTO document_embeddings (user_id,filename, embedding, text_snippet) VALUES (?,?, ?, ?)",
+                       (user_id,filename, embedding_blob, doc.page_content))
     conn.commit()
     conn.close()
  
@@ -362,6 +362,9 @@ def upload_documents():
     conn.close()
  
     documents = []
+    updated_files=[]
+    total_files=0
+    info_msg="All Files uploaded successfully"
     # excluded =[]
     file_hashes = set()
     existing_files = get_existing_files(user_id)  # Get {filename: size} from DB
@@ -375,13 +378,37 @@ def upload_documents():
         file_name = file.filename  # Secure filename
         file_extension = file_name.rsplit(".", 1)[1].lower()
         file_path = os.path.join(f"temp\\{user_id}", file_name)
-        file.save(file_path)
-        file_size = os.path.getsize(file_path)
+        
  
         # Check if filename already exists in DB
         if file_name in existing_files:
             os.remove(file_path)
-            return jsonify({"error": f"File '{file_name}' already exists."}), 400
+             # REMOVE from folder
+
+                #REMOVE from user_storage db
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("""
+            DELETE FROM user_storage 
+            WHERE user_id = ? AND file_name = ? 
+            """, (user_id, file_name))
+
+                #REMOVE from document_embeddings db
+            cursor.execute("""
+            DELETE FROM  document_embeddings
+            WHERE user_id = ? AND filename = ? 
+            """, (user_id, file_name))
+            conn.commit()
+            conn.close()
+
+            updated_files.append(file_name)
+            # file.save(file_path)
+            # print("SAVE F")
+            # return jsonify({"message": "File updated successfully"}), 200
+
+        file.save(file_path)
+        total_files=total_files+1
+        file_size = os.path.getsize(file_path)
  
         file_hash = compute_file_hash(file_path)
  
@@ -407,25 +434,21 @@ def upload_documents():
             extracted_text = extract_text(file_path, file_extension)
             # chat_model = ChatOpenAI(model="gpt-4o-mini")
             chat_response = chat_model.invoke(f"Text format of single resume doc:{extracted_text},##Format this resume without bullet points and **,##Don't give any extra text or ** or any highlighting string in response").content
-            doc = Document(page_content=chat_response)
-            documents.extend([doc])
-            # base_url = "http://localhost:5000/preview/"
-            # preview_link = f"{base_url}{user_id}/{file_name}"
-            
+            doc = Document(page_content=chat_response)          
             if file_name.lower().endswith(".pdf"):
                 preview_link = f"http://localhost:5000/preview/{user_id}/{file_name}"
             elif file_name.lower().endswith(".docx"):
                 preview_link = f"http://localhost:5000/download/{user_id}/{file_name}"
  
-            store_file_metadata(user_id, file_name, file_extension, file_size,preview_link)
-            # os.remove(file_path)    
- 
-        # Process embeddings
-    # text_splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=50)
-    # chunks = text_splitter.split_documents(documents)
-    store_embeddings(user_id, documents, file_name)
- 
-    return jsonify({"message": "Documents uploaded and processed successfully"}), 200
+            store_file_metadata(user_id, file_name, file_extension, file_size,preview_link)#Store meta data to user_storage db
+            store_embeddings(user_id,doc,file_name)#Store embedding to document_embeddings db
+
+
+    if len(updated_files)==total_files:
+        return jsonify({"message": f"{len(updated_files)} Files updated successfully 🌟","files_updated": updated_files}), 200
+    if len(updated_files)!=0:
+        return jsonify({"message": info_msg+f" and {len(updated_files)} Files updated successfully 🌟","files_updated": updated_files}), 200
+    return jsonify({"message": info_msg}), 200
  
 @app.route("/get_user_details", methods=["GET"])
 def get_user_details():
