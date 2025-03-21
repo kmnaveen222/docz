@@ -321,7 +321,7 @@ def fetch_user_details():
 # Fetch Chat History
 def fetch_chat_history():
     headers = {"Authorization": st.session_state.token}
-    response = requests.get(f"{BASE_URL}/get_chat_history", headers=headers, timeout=10)
+    response = requests.get(f"{BASE_URL}/get_chat_history", headers=headers, timeout=30)
     if response.status_code == 200:
         st.session_state.chats = response.json().get("chat_history", {})
     else:
@@ -458,7 +458,7 @@ def chat_interface():
                             f"{BASE_URL}/ask",
                             json={"question": user_input, "chatid": active_chat_id},
                             headers=headers,
-                            timeout=15
+                            timeout=100
                         )
                         if response.status_code == 200:
                             bot_reply = response.json()["answer"]
