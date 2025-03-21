@@ -361,11 +361,10 @@ def upload_documents():
     current_used_space = cursor.fetchone()[0] or 0
     conn.close()
  
-    documents = []
+  
     updated_files=[]
     total_files=0
     info_msg="All Files uploaded successfully"
-    # excluded =[]
     file_hashes = set()
     existing_files = get_existing_files(user_id)  # Get {filename: size} from DB
     # print(existing_files,'EXITFILES')

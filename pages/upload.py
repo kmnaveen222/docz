@@ -58,7 +58,7 @@ st.markdown("Upload PDF, DOCX, or TXT files for processing.")
 
 if not st.session_state.logged_in:
     st.warning("🔑 Please log in to upload documents.")
-    st.page_link("jwtstreamlit.py", label=" ⬅️ Click here to Login")
+    st.page_link("frontend.py", label=" ⬅️ Click here to Login")
     st.markdown("""
     <style>
         [data-testid="stSidebar"] {
@@ -110,7 +110,7 @@ else:
     # ----------------------------- #
     uploaded_files = st.file_uploader("Upload files (Max: 5 MB each)", type=["pdf", "docx", "txt"], accept_multiple_files=True)
     st.markdown(
-    """< style="font-size: 15px;font-style: italic;color: grey ;padding-bottom:20px">
+    """<div style="font-size: 15px;font-style: italic;color: grey ;padding-bottom:20px">
         ⚠️ Warning: If you upload the same file again, it will be updated automatically.
     </div>
     """,
@@ -134,7 +134,7 @@ else:
 
                 with st.spinner("Uploading... Please wait ⏳"):
                     try:
-                        response = requests.post(f"{BASE_URL}/upload_documents", files=files_to_send, headers=headers, timeout=50)
+                        response = requests.post(f"{BASE_URL}/upload_documents", files=files_to_send, headers=headers)
                         if response.status_code == 200:
                             st.success(response.json().get("message"))
                             files_updated = response.json().get("files_updated", [])
@@ -145,6 +145,9 @@ else:
                     except requests.exceptions.RequestException as e:
                         st.error("❌ Server error! Please try again later.")
                         print(f"Upload Error: {e}")  # Debugging
+                        if st.button("Try again 🔄️"):
+                            st.rerun()
+
 
     # if st.button("Go Back"):
     #     os.system("streamlit run jwtstreamlit.py")  # Restart the app (alternative)
