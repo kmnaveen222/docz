@@ -583,11 +583,11 @@ def get_user_files():
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT file_name, file_type, file_size, uploaded_at, used_space,file_path FROM user_storage WHERE user_id = ?
+            SELECT file_name, file_type, uploaded_at FROM user_storage WHERE user_id = ?
         """, (user_id,))
     
-        files = [{"file_name": row[0], "file_type": row[1], "file_size": row[2],
-                "uploaded_at": row[3], "used_space": row[4],"file_path":row[5]} for row in cursor.fetchall()]
+        files = [{"file_name": row[0], "file_type": row[1],
+                "uploaded_at": row[2]} for row in cursor.fetchall()]
     
         conn.close()
         return jsonify({"files": files})
