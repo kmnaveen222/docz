@@ -1,6 +1,7 @@
+
 import os
 import jwt as pyjwt
-import datetime
+from datetime import datetime, timedelta
 import openai
 import re
 import sqlite3
@@ -17,6 +18,12 @@ from context_manager import generate_reply_template
 import textract
 from langchain.schema import Document
 import hashlib
+import pytz
+import threading
+from flask_socketio import SocketIO
+import logging
+logging.getLogger("engineio").setLevel(logging.ERROR)  # Only show errors
+
 
 # Load OpenAI API Key
 load_dotenv()
@@ -24,7 +31,13 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Initialize Flask App
 app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*",
+                   logger=False,
+                   engineio_logger=False,
+                   async_mode='threading')  # Enable CORS for frontend connections
 SECRET_KEY = "your_secret_key"
+
+
 
 # Database Setup
 DB_PATH = "ats.db"
@@ -42,7 +55,8 @@ def init_db():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL
+                username TEXT NOT NULL,
+                password TEXT UNIQUE NOT NULL
             )
         """)
         cursor.execute("""
@@ -86,6 +100,8 @@ def init_db():
         conn.close()
 
 init_db()
+
+
 
 # Store Chat Embedding
 def store_chat_embedding(user_id, newchat_id, message, role):
@@ -141,7 +157,7 @@ def generate_token(user_id):
     try:
         payload = {
             "user_id": user_id,
-            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+            "exp": datetime.utcnow() + timedelta(hours=24)
         }
         return pyjwt.encode(payload, SECRET_KEY, algorithm="HS256")
     except Exception as e:
@@ -174,6 +190,7 @@ def extract_text(file_path, file_extension):
         print(f"Error extracting text from file: {e}")
         return []
 
+
 def store_file_metadata(user_id, file_name, file_type, file_size, file_path):
     try:
         """Stores file details and updates used storage space."""
@@ -182,11 +199,14 @@ def store_file_metadata(user_id, file_name, file_type, file_size, file_path):
         cursor.execute("SELECT SUM(file_size) FROM user_storage WHERE user_id = ?", (user_id,))
         current_used_space = cursor.fetchone()[0] or 0
         new_used_space = current_used_space + file_size
+        # Get current time in IST
+        ist = pytz.timezone('Asia/Kolkata')
+        ist_time = datetime.now(ist).strftime('%Y-%m-%d %H:%M:%S')
 
         cursor.execute("""
             INSERT INTO user_storage (user_id, file_name, file_type, file_size, uploaded_at, used_space, file_path)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
-        """, (user_id, file_name, file_type, file_size, new_used_space, file_path))
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, file_name, file_type, file_size , ist_time, new_used_space, file_path))
         conn.commit()
     except Exception as e:
         print(f"Error storing file metadata: {e}")
@@ -231,7 +251,7 @@ def store_embeddings(user_id,doc,filename):
     conn.close()
 
 def retrieve_similar_context(user_id, newchat_id, query, top_k=1):
-    print("---------------------------------",user_id, newchat_id, query)
+    # print("---------------------------------",user_id, newchat_id, query)
  
     def get_top_matches(data):
         similarities = []
@@ -352,16 +372,19 @@ def get_user_details():
 def register():
     data = request.get_json()
     username = data.get("username")
+    password = data.get("password")
     if not username:
         return jsonify({"error": "Username is required"}), 400
+    if not password:
+        return jsonify({"error": "Password is required"}), 400
 
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (username) VALUES (?)", (username,))
+        cursor.execute("INSERT INTO users (username,password) VALUES (?,?)", (username,password))
         conn.commit()
     except sqlite3.IntegrityError:
-        return jsonify({"error": "Username already exists"}), 400
+        return jsonify({"error": "Password already exists"}), 400
     except sqlite3.Error as e:
         return jsonify({"error": f"Database error2: {e}"}), 500
     finally:
@@ -372,19 +395,33 @@ def register():
 def login():
     data = request.get_json()
     username = data.get("username")
+    password=data.get("password")
+    # print("LOGIN PAGE")
+
     if not username:
-        return jsonify({"error": "Username is required"}), 400
+        return jsonify({"error": "Username is required ❗"}), 400
+    if not password:
+        return jsonify({"error": "Password is required ❗"}), 400
 
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+        cursor.execute("SELECT username,id FROM users WHERE password = ? ",(password,))
         user = cursor.fetchone()
 
         if not user:
-            return jsonify({"error": "User not found"}), 404
+            return jsonify({"error": "User not found "}), 404
 
-        user_id = user[0]
+        user_name=user[0]
+        # print("pass",user_password)
+
+        if user_name!=username:
+            return jsonify({"error": "Invalid username (or) password"}), 404
+        
+        user_id = user[1]
+        # print("ID",user_id)
+
+
         cursor.execute("SELECT message, role FROM chat_history WHERE user_id = ? ORDER BY id DESC LIMIT 50", (user_id,))
         chat_history = cursor.fetchall()
         chat_history.reverse()
@@ -399,44 +436,51 @@ def login():
 
 MAX_USER_STORAGE = 30 * 1024 * 1024  # 30MB limit
 
-@app.route("/upload_documents", methods=["POST"])
-def upload_documents():
-    token = request.headers.get("Authorization")
-    if not token:
-        return jsonify({"error": "Missing token"}), 401
+# @socketio.on("connect")
+# def handle_connect():
+#     print("Client connected 🎉")
 
-    user_id = verify_token(token)
-    if not user_id:
-        return jsonify({"error": "Invalid or expired token"}), 401
+# @socketio.on("disconnect")
+# def handle_disconnect():
+#     print("Client disconnected ❌")
 
-    if "files" not in request.files:
-        return jsonify({"error": "No files uploaded"}), 400
-
-    
+def process_upload(files, user_id):
     try:
-        files = request.files.getlist("files")
+        # print("--------------TRY Bk----------------")
+
 
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("SELECT SUM(file_size) FROM user_storage WHERE user_id = ?", (user_id,))
         current_used_space = cursor.fetchone()[0] or 0
+
+        # cursor.execute("SELECT username FROM users WHERE id = ?", (user_id,))
+        # t_user_name=cursor.fetchone()[0]
+        # print("Username :",t_user_name)
+
         conn.close()
+        # print("🔹 Emitting upload started event")
+        # socketio.emit("upload_status", {"t_user_name":t_user_name, "status": "Processing"})  # Send live updates
 
         existing_files = get_existing_files(user_id)
         updated_files = []
         total_files = 0
-        info_msg = "All files uploaded successfully"
         file_hashes = set()
         os.makedirs(f"temp\\{user_id}", exist_ok=True)
 
         for file in files:
-            if file.filename == "" or not allowed_file(file.filename):
-                return jsonify({"error": f"Invalid file format : {file.filename} "}), 400
-            file_name = file.filename  # Secure filename
+            file_name = file["filename"]
+            file_contents = file["content"] 
+            if file_name == "" or not allowed_file(file_name):
+                # return jsonify({"error": f"Invalid file format : {file.filename} "}), 400
+                # raise ValueError(f"Invalid file format: {file_name}")
+                socketio.emit("upload_status", {"status": f"❗🥲 Invalid file format: {file_name}🙆🏻‍♂️","code":"400"})
+                return
+            
             file_extension = file_name.rsplit(".", 1)[1].lower()
             file_path = os.path.join(f"temp\\{user_id}", file_name)
             
-    
+
             # Check if filename already exists in DB ,then remove
             if file_name in existing_files:
                 os.remove(file_path)# REMOVE from folder
@@ -453,26 +497,38 @@ def upload_documents():
 
                 updated_files.append(file_name)
 
-            file.save(file_path)
+            # file.save(file_path)
+             # Save file from memory
+            with open(file_path, "wb") as f:
+                f.write(file_contents)
+
             total_files+=1
             file_size = os.path.getsize(file_path)
             file_hash = compute_file_hash(file_path)
-    
+
             # Check for duplicate file within the same batch
             if file_hash in file_hashes:
                 os.remove(file_path)
-                return jsonify({"error": f"Duplicate file detected: {file_name}. Remove duplicates from the list."}), 400
-    
+                # return jsonify({"error": f"Duplicate file detected: {file_name}. Remove duplicates from the list."}), 400
+                # raise ValueError(f"Duplicate file detected: {file_name}. Remove duplicates from the list.")
+                socketio.emit("upload_status", {"status": f"❗🥲 Duplicate file detected: {file_name}. Remove duplicates from the list.","code":"400"})
+                return
+            
             # Check storage limit
             if current_used_space + file_size > MAX_USER_STORAGE:
                 os.remove(file_path)
-                return jsonify({"error": "Storage limit exceeded (30MB)"}), 400
-    
+                # return jsonify({"error": "Storage limit exceeded (30MB)"}), 400
+                # raise MemoryError("Storage limit exceeded (30MB)")
+                socketio.emit("upload_status", {"status": "❗🥲 Storage limit exceeded🗄️ (30MB)","code":"400"})
+                return
+
             file_hashes.add(file_hash)
 
         for file in files:
 
-            file_name = file.filename
+            # file_name = file.filename
+            file_name = file["filename"]
+            file_contents = file["content"]
             file_extension = file_name.rsplit(".", 1)[1].lower()
             file_path = os.path.join(f"temp\\{user_id}", file_name)
             file_size = os.path.getsize(file_path)
@@ -489,13 +545,144 @@ def upload_documents():
             store_file_metadata(user_id, file_name, file_extension, file_size, preview_link)
             store_embeddings(user_id, doc, file_name)
 
+        if total_files==1:
+            info_msg = "1 file uploaded successfully👍🏻"
+        else:
+            info_msg = "All files uploaded successfully👍🏻"
+
         if len(updated_files) == total_files:
-            return jsonify({"message": f"{len(updated_files)} files updated successfully 🌟", "files_updated": updated_files}), 200
-        if len(updated_files) != 0:
-            return jsonify({"message": info_msg + f" and {len(updated_files)} files updated successfully 🌟", "files_updated": updated_files}), 200
-        return jsonify({"message": info_msg}), 200
+            if len(updated_files) == 1:
+                socketio.emit("upload_status", {"status": f"{len(updated_files)} file updated successfully 😉", "files_updated": updated_files,"code":"200"})
+            else:
+                socketio.emit("upload_status", {"status": f"{len(updated_files)} files updated successfully 😉", "files_updated": updated_files,"code":"200"})
+            # return jsonify({"message": f"{len(updated_files)} files updated successfully 😉", "files_updated": updated_files}), 200
+        elif len(updated_files) == 1:
+            # return jsonify({"message": info_msg + f" and {len(updated_files)} files updated successfully 😉", "files_updated": updated_files}), 200
+            socketio.emit("upload_status", {"status": f"{info_msg} and {len(updated_files)} file updated 😉", "files_updated": updated_files,"code":"200"})
+        elif len(updated_files) != 0:
+            # return jsonify({"message": info_msg + f" and {len(updated_files)} files updated successfully 😉", "files_updated": updated_files}), 200
+            socketio.emit("upload_status", {"status": f"{info_msg} and {len(updated_files)} files updated 😉", "files_updated": updated_files,"code":"200"})
+        else:
+            socketio.emit("upload_status", {"status":f"{info_msg}","code":"200"})
+
     except Exception as e:
-        return jsonify({"error": f"Error uploading documents: {e}"}), 500
+        # return jsonify({"error": f"Error uploading documents: {e}"}), 500
+        print(f"Error uploading documents: {e}")
+        socketio.emit("upload_status", {"status": f"Upload failed ❌: {str(e)}","code":"500"})
+        
+@app.route("/upload_documents", methods=["POST"])
+def upload_documents():
+    token = request.headers.get("Authorization")
+    if not token:
+        return jsonify({"error": "Missing token"}), 401
+
+    user_id = verify_token(token)
+    if not user_id:
+        return jsonify({"error": "Invalid or expired token"}), 401
+
+    if "files" not in request.files:
+        return jsonify({"error": "No files uploaded"}), 400
+    
+    # files = request.files.getlist("files")
+    files_data = []
+    for file in request.files.getlist("files"):
+        files_data.append({
+            "filename": file.filename,
+            "content": file.read()  # Read file into memory before processing
+        })
+    try:
+        upload_thread = threading.Thread(target=process_upload, args=(files_data, user_id))
+        upload_thread.start() #Background thread
+        return jsonify({"message": "⚡Your upload is blasting off in the background! We’ll notify you when it’s done."}), 200   
+    except Exception as e:
+        return jsonify({"error": f"Upload failed: {str(e)}"}), 500
+
+
+
+    #----------------before threads
+    # try:
+    #     conn = sqlite3.connect(DB_PATH)
+    #     cursor = conn.cursor()
+    #     cursor.execute("SELECT SUM(file_size) FROM user_storage WHERE user_id = ?", (user_id,))
+    #     current_used_space = cursor.fetchone()[0] or 0
+    #     conn.close()
+
+    #     existing_files = get_existing_files(user_id)
+    #     updated_files = []
+    #     total_files = 0
+    #     info_msg = "All files uploaded successfully"
+    #     file_hashes = set()
+    #     os.makedirs(f"temp\\{user_id}", exist_ok=True)
+
+    #     for file in files:
+    #         if file.filename == "" or not allowed_file(file.filename):
+    #             return jsonify({"error": f"Invalid file format : {file.filename} "}), 400
+    #         file_name = file.filename  # Secure filename
+    #         file_extension = file_name.rsplit(".", 1)[1].lower()
+    #         file_path = os.path.join(f"temp\\{user_id}", file_name)
+            
+
+    #         # Check if filename already exists in DB ,then remove
+    #         if file_name in existing_files:
+    #             os.remove(file_path)# REMOVE from folder
+                
+    #             #REMOVE from user_storage db
+    #             conn = sqlite3.connect(DB_PATH)
+    #             cursor = conn.cursor()
+    #             cursor.execute("""DELETE FROM user_storage WHERE user_id = ? AND file_name = ? """, (user_id, file_name))
+
+    #             #REMOVE from document_embeddings db
+    #             cursor.execute("""DELETE FROM  document_embeddings WHERE user_id = ? AND filename = ? """, (user_id, file_name))
+    #             conn.commit()
+    #             conn.close()
+
+    #             updated_files.append(file_name)
+
+    #         file.save(file_path)
+    #         total_files+=1
+    #         file_size = os.path.getsize(file_path)
+    #         file_hash = compute_file_hash(file_path)
+
+    #         # Check for duplicate file within the same batch
+    #         if file_hash in file_hashes:
+    #             os.remove(file_path)
+    #             return jsonify({"error": f"Duplicate file detected: {file_name}. Remove duplicates from the list."}), 400
+
+    #         # Check storage limit
+    #         if current_used_space + file_size > MAX_USER_STORAGE:
+    #             os.remove(file_path)
+    #             return jsonify({"error": "Storage limit exceeded (30MB)"}), 400
+
+    #         file_hashes.add(file_hash)
+
+    #     for file in files:
+
+    #         file_name = file.filename
+    #         file_extension = file_name.rsplit(".", 1)[1].lower()
+    #         file_path = os.path.join(f"temp\\{user_id}", file_name)
+    #         file_size = os.path.getsize(file_path)
+
+    #         extracted_text = extract_text(file_path, file_extension)
+    #         chat_response = chat_model.invoke(f"Text format of single resume doc:{extracted_text},##Format this resume without bullet points and **,##Don't give any extra text or ** or any highlighting string in response").content
+    #         doc = Document(page_content=chat_response)
+
+    #         if file_name.lower().endswith(".pdf"):
+    #             preview_link = f"http://localhost:5000/preview/{user_id}/{file_name}"
+    #         elif file_name.lower().endswith(".docx"):
+    #             preview_link = f"http://localhost:5000/download/{user_id}/{file_name}"
+
+    #         store_file_metadata(user_id, file_name, file_extension, file_size, preview_link)
+    #         store_embeddings(user_id, doc, file_name)
+
+    #     if len(updated_files) == total_files:
+    #         return jsonify({"message": f"{len(updated_files)} files updated successfully 🌟", "files_updated": updated_files}), 200
+    #     if len(updated_files) != 0:
+    #         return jsonify({"message": info_msg + f" and {len(updated_files)} files updated successfully 🌟", "files_updated": updated_files}), 200
+    #     return jsonify({"message": info_msg}), 200
+    # except Exception as e:
+    #     return jsonify({"error": f"Error uploading documents: {e}"}), 500
+    
+    
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -525,8 +712,6 @@ def ask():
     except Exception as e:
         print(f"Error in /ask route: {e}")
         return jsonify({"error": "An error occurred while processing your request"}), 500
- 
- 
  
 @app.route("/get_chat_history", methods=["GET"])
 def get_chat_history():
@@ -583,11 +768,11 @@ def get_user_files():
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT file_name, file_type, file_size, uploaded_at, used_space,file_path FROM user_storage WHERE user_id = ?
+            SELECT file_name, file_type, uploaded_at FROM user_storage WHERE user_id = ?
         """, (user_id,))
     
-        files = [{"file_name": row[0], "file_type": row[1], "file_size": row[2],
-                "uploaded_at": row[3], "used_space": row[4],"file_path":row[5]} for row in cursor.fetchall()]
+        files = [{"file_name": row[0], "file_type": row[1],
+                "uploaded_at": row[2]} for row in cursor.fetchall()]
     
         conn.close()
         return jsonify({"files": files})
@@ -598,14 +783,7 @@ def get_user_files():
         print(f"Error in /user_files route: {e}")
         return jsonify({"error": "An error occurred while fetching user files"}), 500
 
-# Error Handlers
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({"error": "Resource not found"}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({"error": "Internal server error"}), 500
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    # app.run(debug=True)
+    socketio.run(app)
+    

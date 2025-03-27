@@ -1,208 +1,165 @@
-# import os
-# import openai
-# import sqlite3
-# import numpy as np
-# import matplotlib.pyplot as plt
-# from sklearn.decomposition import PCA
-# from sklearn.preprocessing import StandardScaler
-# from dotenv import load_dotenv
-
-# # Load environment variables
-# load_dotenv()
-
-# # OpenAI API setup
-# openai_client = openai.Client(api_key=os.getenv("OPENAI_API_KEY"))
-# db_path = "ats.db"
-
-# def fetch_resume_chunks():
-#     conn = sqlite3.connect(db_path)
-#     cursor = conn.cursor()
-#     cursor.execute("SELECT id, text_snippet FROM document_embeddings")
-#     rows = cursor.fetchall()
-#     conn.close()
-#     return rows
-
-# def determine_role(resume_text):
-#     prompt = (
-#         "Analyze the provided resume content and determine the appropriate role based on the following criteria:\n"
-#         "- If both frontend and backend skills are present, categorize the role as Full Stack Developer only if both primary skills are covered (e.g., Full Stack Developer (Java, React.js)).\n"
-#         "- If multiple backend-related skills are mentioned without primary frontend skills, categorize the role as Backend Developer only.\n"
-#         "- If only backend-related skills are mentioned in the resume, categorize the role as Backend Developer and specify the primary backend language in brackets (e.g., Backend Developer (Java)).\n"
-#         "- If only frontend skills are present, categorize the role as Frontend Developer and specify the primary frontend skill in brackets (e.g., Frontend Developer (React.js)).\n"
-#         "- If frontend frameworks like React.js, Angular, Vue.js, or Next.js are present along with a backend language, categorize the role as Full Stack Developer. Avoid mentioning HTML, CSS, JavaScript, JSP, JDBC, or Spring Boot unless they are part of a recognized frontend framework/library.\n"
-#         "- If a resume mentions 'Full Stack' but no recognized frontend skill like React or Angular is present, categorize it as Backend Developer.\n"
-#         "- If a resume mentions 'Frontend Developer' but only backend skills are present, categorize it as Backend Developer.\n"
-#         "- Exclude HTML, CSS, JSP, JDBC, and Spring Boot unless directly associated with a framework/library.\n"
-#         "- If MERN stack skills are mentioned, categorize the role as MERN Developer.\n"
-#         "- If App Developer skills are mentioned, mention the role as Flutter, React Native, or Native Developer (e.g., Android/iOS Developer).\n"
-#         "- If multiple backend or frontend languages are mentioned, prioritize the one with more hands-on experience, work experience, and project involvement as the primary language.\n"
-#         "- If the role is unclear, infer the appropriate role by examining skills, project experience, and work experience.\n"
-#         "- Ensure flexibility to identify other roles like ServiceNow Developer, Salesforce Developer, DevOps Engineer, etc., based on resume content.\n"
-#         "Return only the role in two words or less, or in the specified format (e.g., Full Stack Developer (Java, React.js)). If unsure, return 'Others'.\n"
-#         f"Resume Content: {resume_text}"
-#     )
-
-#     response = openai_client.chat.completions.create(
-#         model="gpt-4o-mini",
-#         messages=[{"role": "system", "content": prompt}],
-#         max_tokens=50
-#     )
-#     return response.choices[0].message.content.strip()
-
-# def visualize_embeddings_2d(embeddings, role_assignments):
-#     unique_roles = list(set(role_assignments))
-#     role_to_index = {role: i for i, role in enumerate(unique_roles)}
-
-#     # Convert embeddings to numpy
-#     embeddings_array = np.array(embeddings)
-
-#     # Scale embeddings before PCA
-#     scaler = StandardScaler()
-#     scaled_embeddings = scaler.fit_transform(embeddings_array)
-
-#     # Apply PCA
-#     pca = PCA(n_components=2)
-#     reduced_embeddings = pca.fit_transform(scaled_embeddings)
-
-#     # Assign distinct colors to roles
-#     colors = plt.colormaps.get_cmap("tab10")  # Corrected
-#     role_colors = [colors(i / len(unique_roles)) for i in range(len(unique_roles))]  # Sample colors
-
-#     fig, ax = plt.subplots(figsize=(10, 6))
-
-#     for i, role in enumerate(unique_roles):
-#         indices = [idx for idx, r in enumerate(role_assignments) if r == role]
-#         x_vals = reduced_embeddings[indices, 0] + np.random.uniform(-0.1, 0.1, len(indices))  # Small jitter
-#         y_vals = reduced_embeddings[indices, 1] + np.random.uniform(-0.1, 0.1, len(indices))
-
-#         ax.scatter(x_vals, y_vals, label=role, color=role_colors[i], alpha=0.7, edgecolors='black', linewidth=0.5)
-
-#     ax.set_xlabel("PCA Component 1")
-#     ax.set_ylabel("PCA Component 2")
-#     ax.set_title("2D Visualization of Auto-Categorized Roles")
-    
-#     # Fix legend cropping issue
-#     ax.legend(loc="upper left", bbox_to_anchor=(1.05, 1), borderaxespad=0., fontsize=9)
-    
-#     plt.grid(True)
-#     plt.tight_layout()
-#     plt.show()
-
-# def main():
-#     resume_chunks = fetch_resume_chunks()
-#     role_assignments = []
-#     embeddings = []
-
-#     for _, text in resume_chunks:
-#         role = determine_role(text)
-#         embeddings.append(np.random.rand(10))  # Mock 10D embeddings
-#         role_assignments.append(role)
-
-#     visualize_embeddings_2d(embeddings, role_assignments)
-
-# if __name__ == "__main__":
-#     main()
-import os
-import openai
 import sqlite3
 import numpy as np
+import pandas as pd
 import plotly.express as px
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.cluster import MeanShift
+import os
+import openai
+
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-# OpenAI API setup
+# OpenAI API key setup
 openai_client = openai.Client(api_key=os.getenv("OPENAI_API_KEY"))
-db_path = "ats.db"
 
 def fetch_resume_chunks():
-    conn = sqlite3.connect(db_path)
+    """Fetch resume chunks from the database and assigns a default job role."""
+    conn = sqlite3.connect("ats.db")
     cursor = conn.cursor()
     
-    # Fetch only available columns (id and text_snippet)
     cursor.execute("SELECT id, text_snippet FROM document_embeddings")
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
-
-def determine_role(resume_text):
-    prompt = (
-        "Analyze the resume and categorize the role concisely. "
-        "Use roles like 'Full Stack Dev (Java, React)', 'Backend Dev (Python)', 'Frontend Dev (React)', "
-        "'MERN Dev', 'Mobile Dev (Flutter)', etc. Keep it short and meaningful."
-        f" Resume Content: {resume_text}"
-    )
-
-    response = openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "system", "content": prompt}],
-        max_tokens=50
-    )
-    return response.choices[0].message.content.strip()
-
-def visualize_embeddings_2d(embeddings, role_assignments, candidate_ids, text_snippets):
-    unique_roles = list(set(role_assignments))
-
-    # Convert embeddings to numpy
-    embeddings_array = np.array(embeddings)
-
-    # Scale embeddings before PCA
-    scaler = StandardScaler()
-    scaled_embeddings = scaler.fit_transform(embeddings_array)
-
-    # Apply PCA
-    pca = PCA(n_components=2)
-    reduced_embeddings = pca.fit_transform(scaled_embeddings)
-
-    # Shift axis to start from (0,0)
-    reduced_embeddings -= reduced_embeddings.min(axis=0)
-
-    # Extract PDF name (first word of text snippet, modify if needed)
-    pdf_names = [snippet.split()[0] if snippet else "Unknown" for snippet in text_snippets]
-
-    # Prepare data for Plotly
-    data = {
-        "Job Similarity Score (X-axis)": reduced_embeddings[:, 0],
-        "Skill Diversity Score (Y-axis)": reduced_embeddings[:, 1],
-        "Job Role": role_assignments,
-        "Candidate ID": candidate_ids,
-        "PDF Name": pdf_names
-    }
- 
-    fig = px.scatter(
-        data, x="Job Similarity Score (X-axis)", y="Skill Diversity Score (Y-axis)", 
-        color="Job Role", hover_data=["Candidate ID", "PDF Name"],
-        title="Candidate Job Role Clustering",
-        width=1000, height=700  # Increased graph size
+    data = cursor.fetchall()
     
-    )
+    conn.close()
 
-    # Add minimal instructions for better understanding
-    fig.add_annotation(
-        text="Closer points → Similar roles | Higher Y → Diverse skills",
-        xref="paper", yref="paper", x=0.5, y=-0.15, showarrow=False,
-        font=dict(size=12, color="gray")
+    resume_chunks = []
+    for row in data:
+        resume_id, text_snippet = row
+        resume_chunks.append({
+            "id": resume_id,
+            "text_snippet": text_snippet,
+            "job_role": "Unknown"  # Assign default value
+        })
+
+    return resume_chunks
+
+def fetch_embeddings():
+    """Fetches embeddings from the database."""
+    conn = sqlite3.connect("ats.db")
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id, embedding FROM document_embeddings")
+    data = cursor.fetchall()
+    
+    conn.close()
+
+    embeddings = {}
+    for row in data:
+        resume_id, embedding_blob = row
+        # embedding = np.frombuffer(embedding_blob, dtype=np.float32)
+        # embeddings[resume_id] = embedding
+
+        if embedding_blob:  # Ensure it's not None
+            embedding = np.frombuffer(embedding_blob, dtype=np.float32)
+            embeddings[resume_id] = embedding
+        else:
+            print(f"Warning: Resume ID {resume_id} has no embedding data!")
+
+    if not embeddings:
+        print("Error: No embeddings found in the database!")
+
+    return embeddings
+
+def assign_job_roles(resume_chunks):
+    """Assigns job roles dynamically using GPT-4o mini based on provided criteria."""
+    for chunk in resume_chunks:
+        resume_text = chunk["text_snippet"]
+
+        # Prompt for role detection
+        prompt = (
+            "Analyze the provided resume content and determine the appropriate role based on the following criteria:\n"
+            "- If both frontend and backend skills are present, categorize the role as Full Stack Developer only if both primary skills are covered (e.g., Full Stack Developer (Java, React.js)).\n"
+            "- If multiple backend-related skills are mentioned without primary frontend skills, categorize the role as Backend Developer only.\n"
+            "- If only backend-related skills are mentioned in the resume, categorize the role as Backend Developer and specify the primary backend language in brackets (e.g., Backend Developer (Java)).\n"
+            "- If only frontend skills are present, categorize the role as Frontend Developer and specify the primary frontend skill in brackets (e.g., Frontend Developer (React.js)).\n"
+            "- If frontend frameworks like React.js, Angular, Vue.js, or Next.js are present along with a backend language, categorize the role as Full Stack Developer. Avoid mentioning HTML, CSS, JavaScript, JSP, JDBC, or Spring Boot unless they are part of a recognized frontend framework/library.\n"
+            "- If a resume mentions 'Full Stack' but no recognized frontend skill like React or Angular is present, categorize it as Backend Developer.\n"
+            "- If a resume mentions 'Frontend Developer' but only backend skills are present, categorize it as Backend Developer.\n"
+            "- Exclude HTML, CSS, JSP, JDBC, and Spring Boot unless directly associated with a framework/library.\n"
+            "- If MERN stack skills are mentioned, categorize the role as MERN Developer.\n"
+            "- If App Developer skills are mentioned, mention the role as Flutter, React Native, or Native Developer (e.g., Android/iOS Developer).\n"
+            "- If multiple backend or frontend languages are mentioned, prioritize the one with more hands-on experience, work experience, and project involvement as the primary language.\n"
+            "- If the role is unclear, infer the appropriate role by examining skills, project experience, and work experience.\n"
+            "- Ensure flexibility to identify other roles like ServiceNow Developer, Salesforce Developer, DevOps Engineer, etc., based on resume content.\n"
+            "Return only the role in two words or less, or in the specified format (e.g., Full Stack Developer (Java, React.js)). If unsure, return 'Others'.\n"
+            f"Resume Content: {resume_text}"
+        )
+
+        # OpenAI GPT-4o mini API call
+        try:
+            response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": prompt}],
+            max_tokens=50
+        )
+            chunk["job_role"] = response.choices[0].message.content.strip()
+        except Exception as e:
+            chunk["job_role"] = "Unknown"
+            print(f"Error assigning role for resume ID {chunk['id']}: {e}")
+
+    return resume_chunks
+
+def visualize_embeddings_2d(embeddings, resume_chunks):
+    """Visualizes embeddings in 2D using t-SNE and MeanShift Clustering for better grouping."""
+    
+    # Convert embeddings dictionary to list
+    resume_ids = list(embeddings.keys())
+    # embedding_matrix = np.array([embeddings[resume_id] for resume_id in resume_ids])
+
+    embedding_matrix = np.array([embeddings[resume_id] for resume_id in resume_ids if resume_id in embeddings])
+
+    # Check if embedding_matrix is empty before proceeding
+    if embedding_matrix.size == 0:
+        print("Error: No valid embeddings to visualize!")
+        return
+    
+    if embedding_matrix.ndim == 1:
+        embedding_matrix = embedding_matrix.reshape(-1, 1)  # Ensure 2D format
+
+    # Normalize embeddings for better clustering
+    scaler = MinMaxScaler()
+    embedding_matrix = scaler.fit_transform(embedding_matrix)
+
+    # Reduce dimensions using t-SNE (Lower perplexity for tighter clustering)
+    tsne = TSNE(n_components=2, perplexity=3, learning_rate=100, random_state=42)
+    reduced_embeddings = tsne.fit_transform(embedding_matrix)
+
+    # Apply MeanShift Clustering (Automatically detects clusters)
+    clustering = MeanShift()
+    cluster_labels = clustering.fit_predict(reduced_embeddings)
+
+    # Convert to DataFrame
+    df = pd.DataFrame(reduced_embeddings, columns=["X", "Y"])
+    df["Candidate ID"] = resume_ids
+    df["Job Role"] = [chunk["job_role"] for chunk in resume_chunks]
+
+    # Assign each job role a separate cluster (Forces grouping)
+    job_roles = df["Job Role"].unique()
+    job_role_map = {role: i for i, role in enumerate(job_roles)}
+    df["Job Role Cluster"] = df["Job Role"].map(job_role_map)
+
+    # Plot using Plotly
+    fig = px.scatter(
+        df, x="X", y="Y",
+        color="Job Role",
+        hover_data=["Candidate ID", "Job Role"],
+        title="Candidate Job Role Clustering (Optimized)",
+        labels={"X": "X Axis", "Y": "Y Axis"}
     )
 
     fig.show()
- 
-def main():
-    resume_chunks = fetch_resume_chunks()
-    role_assignments = []
-    embeddings = []
-    candidate_ids = []
-    text_snippets = []  # To store text snippets for extracting PDF names
 
-    for doc_id, text in resume_chunks:
-        role = determine_role(text)
-        embeddings.append(np.random.rand(10))  # Mock 10D embeddings
-        role_assignments.append(role)
-        candidate_ids.append(doc_id)  # Use doc_id instead of missing candidate_name
-        text_snippets.append(text)  # Store text snippets
-    visualize_embeddings_2d(embeddings, role_assignments, candidate_ids, text_snippets)
+def main():
+    """Main function to run the visualization."""
+    
+    resume_chunks = fetch_resume_chunks()
+    embeddings = fetch_embeddings()
+    resume_chunks = assign_job_roles(resume_chunks)
+    visualize_embeddings_2d(embeddings, resume_chunks)
 
 if __name__ == "__main__":
     main()
