@@ -1,3 +1,4 @@
+# from socketIO_client_nexus import SocketIO
 import streamlit as st
 import requests
 from dotenv import load_dotenv
@@ -9,6 +10,7 @@ load_dotenv()
 
 # Backend URL
 BASE_URL = "http://127.0.0.1:5000"
+
 
 # Page Configuration
 st.set_page_config(page_title="DocZ", page_icon="🚀", layout="wide", menu_items={})
@@ -55,6 +57,9 @@ def initialize_session():
     if "username" not in st.session_state:
         st.session_state.username = None 
      
+        st.session_state.active_chat = None
+    if "username" not in st.session_state:
+        st.session_state.username = None  
 
 # Fetch User Details
 def fetch_user_details():
@@ -66,7 +71,8 @@ def fetch_user_details():
     elif response.status_code == 500:
         st.error("Server error. Please try again later.")
     else:
-        st.error("Failed to fetch user details.")
+        # st.error("Failed to fetch user details.")
+        logout_user()
 
 # Fetch Chat History
 def fetch_chat_history():
@@ -105,31 +111,53 @@ def logout_user():
 def sidebar_navigation():
     if not st.session_state.logged_in:
         st.sidebar.header("🔑 Authentication")
-        username = st.sidebar.text_input("Enter Username")
+        username = st.sidebar.text_input("Username : ")
+        password=st.sidebar.text_input("Password :")
         
-        if st.sidebar.button("Login"):
-            response = requests.post(f"{BASE_URL}/login", json={"username": username})
-            if response.status_code == 200:
-                data = response.json()
-                st.session_state.logged_in = True
-                st.session_state.token = data.get("token")
-                fetch_user_details()
-                fetch_chat_history()
-                st.components.v1.html(f"""
-                    <script>
-                        localStorage.setItem("token", "{st.session_state.token}");
-                        window.parent.location.reload();
-                    </script>
-                """, height=0, width=0)
+        
+        if st.sidebar.button("Login") :
+            if username :
+                if password:
+                    response = requests.post(f"{BASE_URL}/login", json={"username": username,"password": password})
+                    if response.status_code == 200:
+                        data = response.json()
+                        st.session_state.logged_in = True
+                        st.session_state.token = data.get("token")
+                        fetch_user_details()
+                        fetch_chat_history()
+                        st.components.v1.html(f"""
+                            <script>
+                                localStorage.setItem("token", "{st.session_state.token}");
+                                window.parent.location.reload();
+                            </script>
+                        """, height=0, width=0)
+                    else:
+                        st.sidebar.error(response.json().get("error", "Login failed."))
+                else:
+                    st.sidebar.error("Password is empty!")
             else:
-                st.sidebar.error("Login failed. User not found.")
-        
+                st.sidebar.error("Username is empty!")
+
         if st.sidebar.button("Register"):
-            response = requests.post(f"{BASE_URL}/register", json={"username": username})
-            if response.status_code == 201:
-                st.sidebar.success("Registered successfully. You can now login.")
+            if username:
+                if password:
+                    response = requests.post(f"{BASE_URL}/register", json={"username": username,"password": password})
+                    if response.status_code == 201:
+                        st.sidebar.success("Registered successfully. You can now login.")
+                    else:
+                        st.sidebar.error(response.json().get("error", "Registration failed"))
+                else:
+                    st.sidebar.error("Password is empty!")
             else:
-                st.sidebar.error(response.json().get("error", "Registration failed"))
+                st.sidebar.error("Username is empty!")
+                # st.sidebar.markdown("🔒 First time here?\n\n🛩️Set up your username, password to get started!")
+        st.sidebar.markdown(
+        """<div style="font-size: 15px;font-style: italic;color: grey ;padding-bottom:20px">
+            🔒 First time here?\n\nSet up your username, password to get started!
+        </div>
+        """,
+        unsafe_allow_html=True
+        )
     
     else:
         if st.session_state.username:
@@ -179,10 +207,9 @@ def sidebar_navigation():
             </style>""", unsafe_allow_html=True)
 
             if st.sidebar.button("Logout"):
-                logout_user()
+               logout_user()
         else:
-            logout_user()
-
+            logout_user()    
 
 # Chat Interface
 def chat_interface():
@@ -212,7 +239,8 @@ def chat_interface():
                         response = requests.post(
                             f"{BASE_URL}/ask",
                             json={"question": user_input, "chatid": active_chat_id},
-                            headers=headers
+                            headers=headers,
+                            timeout=100
                         )
                         if response.status_code == 200:
                             bot_reply = response.json()["answer"]
