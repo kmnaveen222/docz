@@ -51,7 +51,10 @@ def initialize_session():
     if "chats" not in st.session_state:
         st.session_state.chats = {}  
     if "active_chat" not in st.session_state:
-        st.session_state.active_chat = None  
+        st.session_state.active_chat = None 
+    if "username" not in st.session_state:
+        st.session_state.username = None 
+     
 
 # Fetch User Details
 def fetch_user_details():
@@ -60,6 +63,8 @@ def fetch_user_details():
     if response.status_code == 200:
         user_data = response.json()
         st.session_state.username = user_data.get("username")
+    elif response.status_code == 500:
+        st.error("Server error. Please try again later.")
     else:
         st.error("Failed to fetch user details.")
 
@@ -79,9 +84,9 @@ def authenticate_user():
         if token:
             st.session_state.token = token
             st.session_state.logged_in = True
-            fetch_chat_history()
             fetch_user_details()
-
+            fetch_chat_history()
+  
 # Logout User
 def logout_user():
     st.session_state.logged_in = False
@@ -127,53 +132,57 @@ def sidebar_navigation():
                 st.sidebar.error(response.json().get("error", "Registration failed"))
     
     else:
-        st.sidebar.title(f"Hi {st.session_state.username} 🙋🏼‍♂️")
-        if st.sidebar.button("🆕 New Chat"):
-            chat_id = f"chat_{len(st.session_state.chats) + 1}"
-            st.session_state.chats[chat_id] = []
-            st.session_state.active_chat = chat_id
+        if st.session_state.username:
+            st.sidebar.title(f"Hi {st.session_state.username} 🙋🏼‍♂️")
+            if st.sidebar.button("🆕 New Chat"):
+                chat_id = f"chat_{len(st.session_state.chats) + 1}"
+                st.session_state.chats[chat_id] = []
+                st.session_state.active_chat = chat_id
 
-        if st.session_state.chats:
-            for chat_id in reversed(list(st.session_state.chats.keys())):
-                is_active = st.session_state.active_chat == chat_id
-                if is_active:
-                    if st.sidebar.button(chat_id.upper().replace("_", " "), key=f"btn_{chat_id}", on_click=lambda id=chat_id: setattr(st.session_state, 'active_chat', id)):
-                        st.session_state.active_chat = chat_id
-                else:
-                    st.sidebar.button(chat_id.upper().replace("_", " "), key=f"btn_{chat_id}", on_click=lambda id=chat_id: setattr(st.session_state, 'active_chat', id))
-        st.markdown(f"""
-        <style>
-        .st-key-btn_{st.session_state.active_chat} button{{
-            # background-color: purple !important;
-            color: #FF4B4B !important;
-            border-color:#FF4B4B !important;
-    
-        }}
-        </style>
-        """, unsafe_allow_html=True)
+            if st.session_state.chats:
+                for chat_id in reversed(list(st.session_state.chats.keys())):
+                    is_active = st.session_state.active_chat == chat_id
+                    if is_active:
+                        if st.sidebar.button(chat_id.upper().replace("_", " "), key=f"btn_{chat_id}", on_click=lambda id=chat_id: setattr(st.session_state, 'active_chat', id)):
+                            st.session_state.active_chat = chat_id
+                    else:
+                        st.sidebar.button(chat_id.upper().replace("_", " "), key=f"btn_{chat_id}", on_click=lambda id=chat_id: setattr(st.session_state, 'active_chat', id))
+            st.markdown(f"""
+            <style>
+            .st-key-btn_{st.session_state.active_chat} button{{
+                # background-color: purple !important;
+                color: #FF4B4B !important;
+                border-color:#FF4B4B !important;
+        
+            }}
+            </style>
+            """, unsafe_allow_html=True)
 
-        st.sidebar.page_link("pages/upload.py", label="📲 Go to Upload Page")
-        st.sidebar.page_link("pages/upload_files.py", label=" 🔖 View uploaded docs")
-        st.markdown("""
-        <style>
-            [data-testid="stSidebar"] a {
-                background-color: #1a1c24 !important; /* Change to any color */
-                color: white !important;  /* Text color */
-                padding: 10px 15px !important;
-                margin: 10px 0px !important;
-                display: block;
-                text-align: center;
-                font-weight: bold;
-                text-decoration: none;
-            }
+            st.sidebar.page_link("pages/upload.py", label="📲 Go to Upload Page")
+            st.sidebar.page_link("pages/upload_files.py", label=" 🔖 View uploaded docs")
+            st.markdown("""
+            <style>
+                [data-testid="stSidebar"] a {
+                    background-color: #1a1c24 !important; /* Change to any color */
+                    color: white !important;  /* Text color */
+                    padding: 10px 15px !important;
+                    margin: 10px 0px !important;
+                    display: block;
+                    text-align: center;
+                    font-weight: bold;
+                    text-decoration: none;
+                }
 
-            [data-testid="stSidebar"] a:hover {
-                background-color: #474954 !important; /* Hover effect */
-            }
-        </style>""", unsafe_allow_html=True)
+                [data-testid="stSidebar"] a:hover {
+                    background-color: #474954 !important; /* Hover effect */
+                }
+            </style>""", unsafe_allow_html=True)
 
-        if st.sidebar.button("Logout"):
+            if st.sidebar.button("Logout"):
+                logout_user()
+        else:
             logout_user()
+
 
 # Chat Interface
 def chat_interface():
