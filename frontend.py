@@ -103,6 +103,7 @@ def logout_user():
     st.components.v1.html("""
         <script>
             localStorage.removeItem("token");
+            sessionStorage.removeItem('drive_token');
             window.parent.location.reload(); 
         </script>
     """, height=0, width=0)

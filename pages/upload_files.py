@@ -1,5 +1,7 @@
+from io import BytesIO
+import io
 import streamlit as st
-import requests
+import requests  
 import os
 from streamlit_javascript import st_javascript  
 import pandas as pd
@@ -13,7 +15,7 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "token" not in st.session_state:
     st.session_state.token = None
-if "messages" not in st.session_state:
+if "messages" not in st.session_state: 
     st.session_state.messages = []
 if "username" not in st.session_state:
     st.session_state.username = None
@@ -27,7 +29,7 @@ st.markdown("""
 """,unsafe_allow_html=True)
 
 # ----------------------------- #
-#    AUTHENTICATION HANDLING
+#    AUTHENTICATION HANDLING 
 # ----------------------------- #
 def authenticate_user():
     token = st_javascript("localStorage.getItem('token');")
@@ -98,16 +100,20 @@ else:
     """, unsafe_allow_html=True)
     headers = {"Authorization": st.session_state.token}
     response = requests.get(f"{BASE_URL}/user_files", headers=headers)
+
+
     if response.status_code == 200:
         files_data = response.json().get("files", [])
         if files_data:
             # Convert JSON to DataFrame
             df = pd.DataFrame(files_data)
             df.insert(0, "S.No", range(1, len(df) + 1))
+            
             df["Download"] = df["file_path"].apply(lambda path: f'<a href="{path.replace(" ", "%20")}" download>⬇️</a>')
         #     df["Delete"] = df["file_path"].apply(
         #     lambda path: f'<button onclick="deleteFile(\'{path}\')">❌</button>'
         # )
+
             st.markdown(
         """
         <style>
@@ -135,10 +141,10 @@ else:
             df = df.drop(columns=["file_path"])
             st.title("Uploaded Files")
             st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-            
         else:
             st.warning("No files found!")
     else:
         st.error("Failed to fetch files. Check API response.")
+
 
 
