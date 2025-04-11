@@ -17,10 +17,14 @@ from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2.credentials import Credentials
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 import io
+from dotenv import load_dotenv
+
+# Load the .env file
+load_dotenv()
  
  
 # Google OAuth Client ID & Secret file
-CLIENT_SECRETS_FILE = r".streamlit/client_secret_741902476574-peibmj559cm9fqkf71vr6rgcc9eb8vkp.apps.googleusercontent.com.json"
+CLIENT_SECRETS_FILE = os.getenv("CLIENT_SECRETS_FILE")
  
 # Define the OAuth scope (Google Drive)
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
