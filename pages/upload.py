@@ -1,14 +1,8 @@
-import socketio
 import streamlit as st
 import requests
 import os
 from streamlit_javascript import st_javascript  
 import time
-from queue import Queue
-status_queue = Queue()
-import logging
-logging.getLogger("engineio").setLevel(logging.ERROR)  # Hide PING/PONG logs
-logging.getLogger("socketio").setLevel(logging.ERROR)  # Hide Socket.IO logs
 import google.auth
 from io import BytesIO
 from google_auth_oauthlib.flow import Flow
@@ -30,8 +24,8 @@ CLIENT_SECRETS_FILE = os.getenv("CLIENT_SECRETS_FILE")
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
  
  
- 
-BASE_URL = "http://127.0.0.1:5000" # Backend URL
+# BASE_URL = "http://127.0.0.1:5000"
+BASE_URL = "https://docz-fzuo.onrender.com" # Backend URL
  
 
  
@@ -215,10 +209,6 @@ else:
  
         credentials = flow.credentials
         return build("drive", "v3", credentials=credentials)
-   
-   
-    if "disable_uploader" not in st.session_state:
-        st.session_state.disable_uploader = False
                
     uploaded_files = st.file_uploader("Upload files (Max: 5 MB each)", type=["pdf", "docx", "txt","doc"], accept_multiple_files=True,disabled=st.session_state.disable_uploader)
     st.markdown(
@@ -308,28 +298,11 @@ else:
             st.error(f"Error accessing Google Drive: {e}")
  
     if uploaded_files:
-
-        sio = socketio.Client()
-        sio.connect("http://127.0.0.1:5000",wait_timeout=20)
-
-        def handle_upload_status(data):
-            # print("Data from backend:", data)
-            status_queue.put(data)
- 
-        # Ensure the WebSocket event listener is registered
-        if "upload_status" not in sio.handlers:
-            sio.on("upload_status", handle_upload_status) 
-        #     print("🟢 Event Listener Registered for 'upload_status'")
-        #     print("Current handlers 1:", sio.handlers)
-        # else:
-        #     print("🔴 Event Listener already registered!")
- 
         upload_button_placeholder = st.empty()
  
- 
-        if upload_button_placeholder.button("📥 Upload") or st.session_state.disable_uploader == True:
+        if upload_button_placeholder.button("📥 Upload"):
+           
             oversized_files = [file.name for file in uploaded_files if len(file.getvalue()) > MAX_FILE_SIZE]
- 
             if oversized_files:
                 st.error(f"❌ The following files exceed 5MB: {', '.join(oversized_files)}")
             else:
@@ -339,50 +312,29 @@ else:
                 upload_button_placeholder.empty()  # Remove button after click
  
                 try:
-                    response = requests.post(f"{BASE_URL}/upload_documents", files=files_to_send, headers=headers)
-                    if response.status_code == 200:
-                        message_placeholder = st.empty()
-                        response=response.json()
-                        message_placeholder.success(response.get("message"))
-                        with st.spinner("Uploading... Please wait ⏳"):
-                            data = status_queue.get()  # Retrieve data from the queue
-                            if data:
-                                message_placeholder.empty()
-                                sio.disconnect()
-                                if data['code']=='200':
-                                    st.success(f"{data['status']}")
-                                      
-                                    if 'files_updated' in data:
-                                        st.success("✅ Files Updated:\n" + "\n".join(f"- {file}" for file in data['files_updated']))
-                       
-                                else:
-                                    st.error(f"{data['status']}")
-                    # st.session_state.disable_uploader = False
-                                if st.button("Upload again ↗️"):
-                                    st.components.v1.html("""
-                                        <script>
-                                            localStorage.removeItem("drive_token");
-                                            window.parent.location.reload();
-                                        </script>
-                                        """, height=0, width=0)
-                                    st.rerun()
-                            else:
-                                st.error(response.json().get("error", "❌ File upload failed"))
-                                st.session_state.disable_uploader = False
-                    # time.sleep(10)
-                    # st.components.v1.html("""
-                    #         <script>
-                    #             localStorage.removeItem("drive_token");
-                    #             window.parent.location.reload();
-                    #         </script>
-                    #         """, height=0, width=0)
+                    with st.spinner("⚡Your upload is blasting off in the background! We'll notify you when it's done.... Please wait ⏳"):
+                        response = requests.post(f"{BASE_URL}/upload_documents", files=files_to_send, headers=headers)
+                        if response.status_code == 200:
+                            response=response.json()
+                            st.success(response.get("message"))
+                            updated_files = response.get("files_updated", [])
+                            if updated_files:
+                                file_list_md = "\n".join([f"- {file}" for file in updated_files])
+                                st.success(f"Files updated: {file_list_md}")
+                            if st.button("Upload again ↗️"):
+                                st.components.v1.html("""
+                                    <script>
+                                        localStorage.removeItem("drive_token");
+                                        window.parent.location.reload();
+                                    </script>
+                                    """, height=0, width=0)
+                                st.rerun()
+                        else:
+                            st.error(response.json().get("error", "❌ File upload failed"))
+                           
                 except requests.exceptions.RequestException as e:
                     st.error("❌ Server error! Please try again later.")
                     print(f"Upload Error: {e}")  # Debugging
                     if st.button("Try again 💪🏼🔄️"):
-                        st.session_state.disable_uploader = False
                         st.rerun()
-#     # if st.button("Go Back"):
-#     #     os.system("streamlit run jwtstreamlit.py")  # Restart the app (alternative)
-#     #     st.rerun()  # Rerun the script to refresh the app
  

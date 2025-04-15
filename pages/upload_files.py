@@ -6,7 +6,8 @@ import os
 from streamlit_javascript import st_javascript  
 import pandas as pd
 
-BASE_URL = "http://127.0.0.1:5000" # Backend URL
+# BASE_URL = "http://127.0.0.1:5000"
+BASE_URL = "https://docz-fzuo.onrender.com" # Backend URL
 
 st.set_page_config(page_title="DocZ", page_icon="🚀", layout="wide", menu_items={})
 

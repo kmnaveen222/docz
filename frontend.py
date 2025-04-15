@@ -9,7 +9,8 @@ from streamlit_javascript import st_javascript
 load_dotenv()
 
 # Backend URL
-BASE_URL = "http://127.0.0.1:5000"
+# BASE_URL = "http://127.0.0.1:5000"
+BASE_URL = "https://docz-fzuo.onrender.com"
 
 
 # Page Configuration

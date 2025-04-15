@@ -12,16 +12,11 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyMuPDFLoader
 from sklearn.metrics.pairwise import cosine_similarity
 from context_manager import generate_reply_template
-# import textract
-# from langchain.document_loaders import PyMuPDFLoader
-# from langchain.schema import Document
 from docx import Document as DocxDocument
 from langchain.schema import Document
 import hashlib
 import pytz
-import threading
-from flask_socketio import SocketIO
-import logging
+
 # from SQLite_database import (
 from Postgres import (
     init_db,
@@ -46,10 +41,10 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
  
 # Initialize Flask App
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*",
-                   logger=False,
-                   engineio_logger=False,
-                   async_mode='threading')
+# socketio = SocketIO(app, cors_allowed_origins="*",
+#                    logger=False,
+#                    engineio_logger=False,
+#                    async_mode='threading')
 SECRET_KEY = "your_secret_key"
  
 # Initialize Embedding Model
@@ -291,8 +286,22 @@ def login():
         })
     except Exception as e:
         return jsonify({"error": f"Error during login: {e}"}), 500
+   
+@app.route("/upload_documents", methods=["POST"])
+def upload_documents():
+    token = request.headers.get("Authorization")
+    if not token:
+        return jsonify({"error": "Missing token"}), 401
  
-def process_upload(files, user_id):
+    user_id = verify_token(token)
+    if not user_id:
+        return jsonify({"error": "Invalid or expired token"}), 401
+ 
+    if "files" not in request.files:
+        return jsonify({"error": "No files uploaded"}), 400
+   
+    uploaded_files = request.files.getlist("files")
+ 
     try:
         current_used_space = get_used_storage(user_id)
         existing_files = get_existing_files(user_id)
@@ -301,16 +310,19 @@ def process_upload(files, user_id):
         file_hashes = set()
         os.makedirs(f"temp\\{user_id}", exist_ok=True)
  
-        for file in files:
-            file_name = file["filename"]
-            file_contents = file["content"]
+        for file in uploaded_files:
+            file_name = file.filename
+            file_contents = file.read()
+ 
             if file_name == "" or not allowed_file(file_name):
-                socketio.emit("upload_status", {"status": f"❗🥲 Invalid file format: {file_name}🙆🏻‍♂️","code":"400"})
-                return
-           
+                return jsonify({
+                    "status": f"❗🥲 Invalid file format: {file_name}🙆🏻‍♂️",
+                    "code": "400"
+                }), 400
+ 
             file_extension = file_name.rsplit(".", 1)[1].lower()
             file_path = os.path.join(f"temp\\{user_id}", file_name)
-           
+ 
             if file_name in existing_files:
                 os.remove(file_path)
                 delete_file(user_id, file_name)
@@ -325,19 +337,23 @@ def process_upload(files, user_id):
  
             if file_hash in file_hashes:
                 os.remove(file_path)
-                socketio.emit("upload_status", {"status": f"❗🥲 Duplicate file detected: {file_name}. Remove duplicates from the list.","code":"400"})
-                return
+                return jsonify({
+                    "status": f"❗🥲 Duplicate file detected: {file_name}. Remove duplicates from the list.",
+                    "code": "400"
+                }), 400
  
             if current_used_space + file_size > MAX_USER_STORAGE:
                 os.remove(file_path)
-                socketio.emit("upload_status", {"status": "❗🥲 Storage limit exceeded🗄️ (30MB)","code":"400"})
-                return
+                return jsonify({
+                    "status": "❗🥲 Storage limit exceeded🗄️ (30MB)",
+                    "code": "400"
+                }), 400
  
             file_hashes.add(file_hash)
  
-        for file in files:
-            file_name = file["filename"]
-            file_contents = file["content"]
+        for file in uploaded_files:
+            file_name = file.filename
+            file_contents = file.read()
             file_extension = file_name.rsplit(".", 1)[1].lower()
             file_path = os.path.join(f"temp\\{user_id}", file_name)
             file_size = os.path.getsize(file_path)
@@ -361,46 +377,18 @@ def process_upload(files, user_id):
  
         if len(updated_files) == total_files:
             if len(updated_files) == 1:
-                socketio.emit("upload_status", {"status": f"{len(updated_files)} file updated successfully 😉", "files_updated": updated_files,"code":"200"})
+                return jsonify({"message":"One file updated successfully 😉","files_updated":updated_files}),200
             else:
-                socketio.emit("upload_status", {"status": f"{len(updated_files)} files updated successfully 😉", "files_updated": updated_files,"code":"200"})
+                return jsonify({"message":f"{len(updated_files)} files updated successfully 😉","files_updated":updated_files}),200
         elif len(updated_files) == 1:
-            socketio.emit("upload_status", {"status": f"{info_msg} and {len(updated_files)} file updated 😉", "files_updated": updated_files,"code":"200"})
+            return jsonify({"message":f"{info_msg} and {len(updated_files)} file updated 😉","files_updated":updated_files}),200
         elif len(updated_files) != 0:
-            socketio.emit("upload_status", {"status": f"{info_msg} and {len(updated_files)} files updated 😉", "files_updated": updated_files,"code":"200"})
+            return jsonify({"message":f"{info_msg} and {len(updated_files)} files updated 😉","files_updated":updated_files}),200
         else:
-            socketio.emit("upload_status", {"status":f"{info_msg}","code":"200"})
- 
-    except Exception as e:
-        print(f"Error uploading documents: {e}")
-        socketio.emit("upload_status", {"status": f"Upload failed ❌: {str(e)}","code":"500"})
-       
-@app.route("/upload_documents", methods=["POST"])
-def upload_documents():
-    token = request.headers.get("Authorization")
-    if not token:
-        return jsonify({"error": "Missing token"}), 401
- 
-    user_id = verify_token(token)
-    if not user_id:
-        return jsonify({"error": "Invalid or expired token"}), 401
- 
-    if "files" not in request.files:
-        return jsonify({"error": "No files uploaded"}), 400
-   
-    files_data = []
-    for file in request.files.getlist("files"):
-        files_data.append({
-            "filename": file.filename,
-            "content": file.read()
-        })
-    try:
-        upload_thread = threading.Thread(target=process_upload, args=(files_data, user_id))
-        upload_thread.start()
-        return jsonify({"message": "⚡Your upload is blasting off in the background! We'll notify you when it's done."}), 200  
+           return jsonify({"message":info_msg}),200
     except Exception as e:
         return jsonify({"error": f"Upload failed: {str(e)}"}), 500
- 
+    
 @app.route("/ask", methods=["POST"])
 def ask():
     try:
@@ -465,4 +453,5 @@ def get_user_files_route():
         return jsonify({"error": "An error occurred while fetching user files"}), 500
  
 if __name__ == "__main__":
-    socketio.run(app,allow_unsafe_werkzeug=True)
+    # socketio.run(app,allow_unsafe_werkzeug=True)
+    app.run(debug=True)
