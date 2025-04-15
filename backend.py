@@ -308,7 +308,8 @@ def upload_documents():
         updated_files = []
         total_files = 0
         file_hashes = set()
-        os.makedirs(f"temp\\{user_id}", exist_ok=True)
+        temp_folder = os.path.join("temp", str(user_id))
+        os.makedirs(temp_folder, exist_ok=True)
  
         for file in uploaded_files:
             file_name = file.filename
@@ -316,12 +317,11 @@ def upload_documents():
  
             if file_name == "" or not allowed_file(file_name):
                 return jsonify({
-                    "status": f"❗🥲 Invalid file format: {file_name}🙆🏻‍♂️",
-                    "code": "400"
+                    "error": f"❗🥲 Invalid file format: {file_name}🙆🏻‍♂️"
                 }), 400
  
             file_extension = file_name.rsplit(".", 1)[1].lower()
-            file_path = os.path.join(f"temp\\{user_id}", file_name)
+            file_path = os.path.join(temp_folder, file_name)
  
             if file_name in existing_files:
                 os.remove(file_path)
@@ -338,15 +338,13 @@ def upload_documents():
             if file_hash in file_hashes:
                 os.remove(file_path)
                 return jsonify({
-                    "status": f"❗🥲 Duplicate file detected: {file_name}. Remove duplicates from the list.",
-                    "code": "400"
+                    "error": f"❗🥲 Duplicate file detected: {file_name}. Remove duplicates from the list."
                 }), 400
  
             if current_used_space + file_size > MAX_USER_STORAGE:
                 os.remove(file_path)
                 return jsonify({
-                    "status": "❗🥲 Storage limit exceeded🗄️ (30MB)",
-                    "code": "400"
+                    "error": "❗🥲 Storage limit exceeded🗄️ (30MB)"
                 }), 400
  
             file_hashes.add(file_hash)
@@ -355,7 +353,7 @@ def upload_documents():
             file_name = file.filename
             file_contents = file.read()
             file_extension = file_name.rsplit(".", 1)[1].lower()
-            file_path = os.path.join(f"temp\\{user_id}", file_name)
+            file_path = os.path.join(temp_folder, file_name)
             file_size = os.path.getsize(file_path)
  
             extracted_text = extract_text(file_path, file_extension)
