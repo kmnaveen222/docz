@@ -361,9 +361,11 @@ def upload_documents():
             doc = Document(page_content=chat_response)
  
             if file_name.lower().endswith(".pdf"):
-                preview_link = f"http://localhost:5000/preview/{user_id}/{file_name}"
+                preview_link = f"https://docz-fzuo.onrender.com/preview/{user_id}/{file_name}"
+                # preview_link = f"http://localhost:5000/preview/{user_id}/{file_name}"
             elif file_name.lower().endswith(".docx"):
-                preview_link = f"http://localhost:5000/download/{user_id}/{file_name}"
+                preview_link = f"https://docz-fzuo.onrender.com/download/{user_id}/{file_name}"
+                # preview_link = f"http://localhost:5000/download/{user_id}/{file_name}"
  
             store_file_metadata(user_id, file_name, file_extension, file_size, preview_link)
             store_document_embedding(user_id, file_name, doc.page_content, embeddings_model.embed_query(doc.page_content))
