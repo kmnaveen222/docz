@@ -210,7 +210,7 @@ else:
         credentials = flow.credentials
         return build("drive", "v3", credentials=credentials)
                
-    uploaded_files = st.file_uploader("Upload files (Max: 5 MB each)", type=["pdf", "docx", "txt","doc"], accept_multiple_files=True,disabled=st.session_state.disable_uploader)
+    uploaded_files = st.file_uploader("Upload files (Max: 5 MB each)", type=["pdf", "docx", "txt","doc"], accept_multiple_files=True)
     st.markdown(
     """<div style="font-size: 15px;font-style: italic;color: grey ;padding-bottom:20px">
         ⚠️ Warning: If you upload the same file again, it will be updated automatically.
