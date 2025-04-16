@@ -3,6 +3,7 @@ import psycopg2
 import numpy as np
 from datetime import datetime
 import pytz
+from io import BytesIO
 
 # Database Connection Parameters
 # DB_PARAMS = {
@@ -64,7 +65,8 @@ def init_db():
                 file_size INTEGER,
                 uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 used_space INTEGER DEFAULT 0,
-                file_path TEXT
+                file_path TEXT,
+                file_oid OID NOT NULL
             )
         """)
         conn.commit()
@@ -72,6 +74,37 @@ def init_db():
         print(f"Database initialization error: {e}")
     finally:
         conn.close()
+
+
+
+def get_file_metadata(user_id,filename):
+    conn = get_connection()    
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT file_oid,id
+        FROM user_storage 
+        WHERE user_id  = %s AND file_name = %s
+        """,
+        (user_id,filename)
+    )
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return {
+        "oid": result[0],
+        "file_id": result[1]
+    } if result else None
+
+def get_file_by_oid(oid):
+    print("Got oid")
+    conn = get_connection()
+    conn.autocommit = False
+    lobj = conn.lobject(oid, 'rb')
+    file_data = lobj.read()
+    lobj.close()
+    conn.close()
+    return BytesIO(file_data)  # Return as file-like object
 
 # User Operations
 def register_user(username, password):
@@ -209,7 +242,7 @@ def get_document_embeddings(user_id):
         conn.close()
 
 # File Storage Operations
-def store_file_metadata(user_id, file_name, file_type, file_size, file_path):
+def store_file_metadata(user_id, file_name, file_type, file_size, file_path,preview_link):
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -218,10 +251,24 @@ def store_file_metadata(user_id, file_name, file_type, file_size, file_path):
         new_used_space = current_used_space + file_size
         ist = pytz.timezone('Asia/Kolkata')
         ist_time = datetime.now(ist).strftime('%Y-%m-%d %H:%M:%S')
+
+        cursor.execute("SELECT lo_create(0)")
+        oid = cursor.fetchone()[0]
+
+        lobj = conn.lobject(oid, 'wb')  # 'wb' = write binary mode
+        with open(file_path, 'rb') as f:
+            while True:
+                chunk = f.read(4096)  # Read in 4KB chunks (adjust as needed)
+                if not chunk:
+                    break
+                lobj.write(chunk)
+            print("File read")
+        lobj.close()
+
         cursor.execute("""
-            INSERT INTO user_storage (user_id, file_name, file_type, file_size, uploaded_at, used_space, file_path)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (user_id, file_name, file_type, file_size, ist_time, new_used_space, file_path))
+            INSERT INTO user_storage (user_id, file_name, file_type, file_size, uploaded_at, used_space, file_path,file_oid)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (user_id, file_name, file_type, file_size, ist_time, new_used_space,preview_link,oid))
         conn.commit()
     except psycopg2.Error as e:
         print(f"Error storing file metadata: {e}")
@@ -233,7 +280,7 @@ def get_user_files(user_id):
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT file_name, file_type, uploaded_at, file_path
+            SELECT file_name, file_type, uploaded_at, file_path,id
             FROM user_storage
             WHERE user_id = %s
         """, (user_id,))
@@ -241,7 +288,8 @@ def get_user_files(user_id):
             "file_name": row[0],
             "file_type": row[1],
             "uploaded_at": row[2],
-            "file_path": row[3]
+            "file_path": row[3],
+            "file_id" : row[4]
         } for row in cursor.fetchall()]
     except psycopg2.Error as e:
         print(f"Error getting user files: {e}")

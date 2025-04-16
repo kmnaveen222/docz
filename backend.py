@@ -5,7 +5,7 @@ import openai
 import re
 import numpy as np
 import requests
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory,send_file
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -32,7 +32,9 @@ from Postgres import (
     get_user_files,
     get_existing_files,
     delete_file,
-    get_used_storage
+    get_used_storage,
+    get_file_metadata, 
+    get_file_by_oid
 )
  
 # Load OpenAI API Key
@@ -106,18 +108,6 @@ def verify_token(token):
 def allowed_file(filename):
     ALLOWED_EXTENSIONS = {"pdf", "docx", "txt"}
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
- 
-# def extract_text(file_path, file_extension):
-#     try:
-#         if file_extension == "pdf":
-#             loader = PyMuPDFLoader(file_path)
-#             return loader.load()
-#         else:
-#             extracted_text = textract.process(file_path).decode("utf-8")
-#             return [Document(page_content=extracted_text)]
-#     except Exception as e:
-#         print(f"Error extracting text from file: {e}")
-#         return []
 
 def extract_text(file_path, file_extension):
     try:
@@ -206,17 +196,51 @@ def retrieve_similar_context(user_id, newchat_id, query, top_k=1):
    
     return top_match, context_template, modified_query
  
-@app.route("/preview/<id>/<filename>")
-def preview_file(filename, id):
-    UPLOAD_FOLDER = f"temp/{id}"
-    app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-    return send_from_directory(app.config["UPLOAD_FOLDER"], filename, mimetype='application/pdf')
+# @app.route("/preview/<id>/<filename>")
+# def preview_file(filename, id):
+#     UPLOAD_FOLDER = f"temp/{id}"
+#     app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+#     return send_from_directory(app.config["UPLOAD_FOLDER"], filename, mimetype='application/pdf')
  
-@app.route("/download/<id>/<filename>")
-def download_file(filename, id):
-    UPLOAD_FOLDER = f"temp/{id}"
-    app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-    return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
+# @app.route("/download/<id>/<filename>")
+# def download_file(filename, id):
+#     UPLOAD_FOLDER = f"temp/{id}"
+#     app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+#     return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
+@app.route("/preview/<user_id>/<filename>")
+def preview_file(user_id, filename):
+    print("preview file")
+    # Verify metadata matches request
+    metadata = get_file_metadata(user_id,filename)
+    if not metadata :
+        return "File not found", 404
+    file_stream = get_file_by_oid(metadata["oid"])
+    mimetype = 'application/pdf'
+    if filename.lower().endswith(('.docx')):
+       mimetype = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+    #     mimetype = f'image/{filename.split(".")[-1]}'
+    # print("download file")
+    return send_file(
+        file_stream,
+        mimetype=mimetype,
+        as_attachment=False  # Preview in browser
+    )
+
+@app.route("/download/<user_id>/<filename>")
+def download_file(user_id, filename):
+    print("Download file")
+    metadata = get_file_metadata(user_id,filename)
+    if not metadata :
+        return "File not found", 404
+    
+    file_stream = get_file_by_oid(metadata["oid"])
+    
+    return send_file(
+        file_stream,
+        as_attachment=True,
+        download_name=filename  # Force save with original name
+    )
  
 @app.route("/get_user_details", methods=["GET"])
 def get_user_details():
@@ -364,10 +388,10 @@ def upload_documents():
                 preview_link = f"https://docz-fzuo.onrender.com/preview/{user_id}/{file_name}"
                 # preview_link = f"http://localhost:5000/preview/{user_id}/{file_name}"
             elif file_name.lower().endswith(".docx"):
-                preview_link = f"https://docz-fzuo.onrender.com/download/{user_id}/{file_name}"
+                preview_link = f"https://docs.google.com/gview?url=https://docz-fzuo.onrender.com/preview/{user_id}/{file_name}&embedded=true"
                 # preview_link = f"http://localhost:5000/download/{user_id}/{file_name}"
  
-            store_file_metadata(user_id, file_name, file_extension, file_size, preview_link)
+            store_file_metadata(user_id, file_name, file_extension, file_size, file_path,preview_link)
             store_document_embedding(user_id, file_name, doc.page_content, embeddings_model.embed_query(doc.page_content))
  
         if total_files == 1:
@@ -388,7 +412,7 @@ def upload_documents():
            return jsonify({"message":info_msg}),200
     except Exception as e:
         return jsonify({"error": f"Upload failed: {str(e)}"}), 500
-    
+ 
 @app.route("/ask", methods=["POST"])
 def ask():
     try:
