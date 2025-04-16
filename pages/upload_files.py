@@ -105,12 +105,22 @@ else:
 
     if response.status_code == 200:
         files_data = response.json().get("files", [])
+        user_id=response.json().get("user_id")
         if files_data:
             # Convert JSON to DataFrame
             df = pd.DataFrame(files_data)
             df.insert(0, "S.No", range(1, len(df) + 1))
+
+            def generate_preview_link(path):
+                encoded_path = path.replace(" ", "%20")
+                if path.lower().endswith(".pdf"):
+                    return f'<a href="https://docz-fzuo.onrender.com/preview/{user_id}/{encoded_path}" preview>📄</a>'
+                elif path.lower().endswith(".docx"):
+                    return f'<a href="https://docs.google.com/viewerng/viewer?url=https://docz-fzuo.onrender.com/preview/{user_id}/{encoded_path}&embedded=true" preview>📝</a>'
             
-            df["Download"] = df["file_path"].apply(lambda path: f'<a href="{path.replace(" ", "%20")}" download>⬇️</a>')
+            # df["Preview"] = df["file_name"].apply(lambda path: f'<a href="https://docz-fzuo.onrender.com/preview/{user_id}/{path.replace(" ", "%20")}" preview>👁️</a>')
+            df["Preview"] = df["file_name"].apply(lambda path: generate_preview_link(path))
+            df["Download"] = df["file_name"].apply(lambda path: f'<a href="https://docz-fzuo.onrender.com/download/{user_id}/{path.replace(" ", "%20")}" download>⬇️</a>')
         #     df["Delete"] = df["file_path"].apply(
         #     lambda path: f'<button onclick="deleteFile(\'{path}\')">❌</button>'
         # )
@@ -129,9 +139,7 @@ else:
             text-align: left !important;
             # width:30% !important;
         }
-        td:nth-child(5) {
-        width:2% !important;
-        }
+       
         td a{
          text-decoration: none !important;
         }
@@ -140,6 +148,7 @@ else:
         unsafe_allow_html=True,
     )
             df = df.drop(columns=["file_path"])
+            df = df.drop(columns=["file_id"])
             st.title("Uploaded Files")
             st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
         else:

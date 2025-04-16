@@ -388,7 +388,7 @@ def upload_documents():
                 preview_link = f"https://docz-fzuo.onrender.com/preview/{user_id}/{file_name}"
                 # preview_link = f"http://localhost:5000/preview/{user_id}/{file_name}"
             elif file_name.lower().endswith(".docx"):
-                preview_link = f"https://docs.google.com/gview?url=https://docz-fzuo.onrender.com/preview/{user_id}/{file_name}&embedded=true"
+                preview_link = f"https://docs.google.com/viewerng/viewer?url=https://docz-fzuo.onrender.com/preview/{user_id}/{file_name}&embedded=true"
                 # preview_link = f"http://localhost:5000/download/{user_id}/{file_name}"
  
             store_file_metadata(user_id, file_name, file_extension, file_size, file_path,preview_link)
@@ -471,7 +471,7 @@ def get_user_files_route():
             return jsonify({"error": "Invalid or expired token"}), 401
    
         files = get_user_files(user_id)
-        return jsonify({"files": files})
+        return jsonify({"files": files,"user_id":user_id})
     except Exception as e:
         print(f"Error in /user_files route: {e}")
         return jsonify({"error": "An error occurred while fetching user files"}), 500
