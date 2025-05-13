@@ -1,4 +1,7 @@
- --upgrade pip
+rich>=10.14.0
+markdown-it-py>=2.2.0
+pygments>=2.13.0,<3.0.0
+mdurl~=0.1
 flask
 python-dotenv
 openai>=1.0.0
