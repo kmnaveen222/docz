@@ -170,7 +170,7 @@ else:
     #        FILE UPLOADER
     # ----------------------------- #
     def authenticate_google():
-        flow = Flow.from_client_secrets_file(CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri="https://localhost:8501/upload")
+        flow = Flow.from_client_secrets_file(CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri="https://kmnaveen222-docz-frontend-streamlit-xgyx6e.streamlit.app/upload")
        
         auth_url, state = flow.authorization_url(prompt='select_account',access_type="online")
         # print("Auth_url",auth_url)
@@ -205,10 +205,10 @@ else:
         #     st.error("Invalid OAuth state. Please try again.")
         #     st.stop()
  
-        authorization_response = f"https://localhost:8501/?code={auth_code}"
+        authorization_response = f"https://kmnaveen222-docz-frontend-streamlit-xgyx6e.streamlit.app/?code={auth_code}"
        
         flow = Flow.from_client_secrets_file(
-            CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri="https://localhost:8501/upload"
+            CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri="https://kmnaveen222-docz-frontend-streamlit-xgyx6e.streamlit.app/upload"
         )
         flow.fetch_token(authorization_response=authorization_response)
  
