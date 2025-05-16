@@ -82,23 +82,28 @@ else:
     st.sidebar.page_link("pages/upload.py", label=" 📲 Go Back to Upload Page")
     # Custom styling for sidebar links
     st.markdown("""
-    <style>
-        [data-testid="stSidebar"] a {
-            background-color: #1a1c24 !important; /* Change to any color */
-            color: white !important;  /* Text color */
-            padding: 10px 15px !important;
-            margin: 10px 0px !important;
-            display: block;
-            text-align: center;
-            font-weight: bold;
-            text-decoration: none;
-        }
+            <style>
+                [data-testid="stSidebar"] a {
+                    # background-color: rgb(249, 249, 251) !important; /* Change to any color */
+                    padding: 10px 15px !important;
+                    margin: 10px 0px !important;
+                    display: block;
+                    text-align: center;
+                    font-weight: bold;
+                    border :0.5px solid rgba(49, 51, 63, 0.2);
+                }
 
-        [data-testid="stSidebar"] a:hover {
-            background-color: #474954 !important; /* Hover effect */
-        }
-    </style>
-    """, unsafe_allow_html=True)
+                [data-testid="stSidebar"] a:hover {
+                    border-color: rgb(255,93,80) !important; /* Hover effect */
+                }
+                [data-testid="stSidebar"] a p:hover {
+                    color:rgb(255,93,80) !important;
+                }
+                
+                .st-emotion-cache-1qeq59m
+                {background-color: rgb(43, 44, 54) !important;
+                border: 1px solid #51525A !important;}
+            </style>""", unsafe_allow_html=True)
     headers = {"Authorization": st.session_state.token}
     response = requests.get(f"{BASE_URL}/user_files", headers=headers)
 
